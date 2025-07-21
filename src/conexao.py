@@ -3,9 +3,9 @@ import psycopg2
 def conectar():
     try:
         conexao = psycopg2.connect(
-            dbname="biblioteca",       # nome do banco criado no pgAdmin
-            user="postgres",            # seu usuário PostgreSQL
-            password="130613",  # sua senha do PostgreSQL
+            dbname="biblioteca",
+            user="postgres",          
+            password="130613", 
             host="localhost",
             port="5432"
         )
