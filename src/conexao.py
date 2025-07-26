@@ -3,9 +3,9 @@ import psycopg2
 def conectar():
     try:
         conexao = psycopg2.connect(
-            dbname="biblioteca",
+            dbname="Biblioteca",
             user="postgres",          
-            password="sua_senha_aqui", 
+            password="postgre", 
             host="localhost",
             port="5432"
         )
@@ -14,3 +14,16 @@ def conectar():
     except Exception as e:
         print("Erro na conexão:", e)
         return None
+    
+def inserirAutor(nome, nacionalidade, data_nascimento):
+	try:
+		conn = conectar()
+		cur = conn.cursor()
+		cur.execute("INSERT INTO Autor (nome, nacionalidade, data_nascimento) VALUES (%s, %s, %s)", (nome, nacionalidade, data_nascimento))
+		conn.commit()
+		cur.close()
+		conn.close()
+	except Exception as e:
+		print(e)
+
+inserirAutor("Tainá Caroline", "Brasileira", "2004-08-11")
