@@ -15,6 +15,177 @@ def conectar():
         print(f"Erro na conexão: {e}")
         return None
 
+import psycopg2
+from datetime import date, datetime, timedelta
+
+def conectar():
+    try:
+        conexao_db = psycopg2.connect(
+            dbname="Biblioteca",
+            user="postgres",          
+            password="postgre", 
+            host="localhost",
+            port="5432"
+        )
+        return conexao_db
+    except Exception as e:
+        print(f"Erro na conexão: {e}")
+        return None
+
+def criar_tabelas_e_triggers():
+    conn = conectar()
+    if conn:
+        cur = conn.cursor()
+        try:
+            # Tabela de Auditoria
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS audit_devolucao (
+                    id_audit SERIAL PRIMARY KEY,
+                    Num_Tombamento INTEGER,
+                    Email VARCHAR(250),
+                    Data_Empre DATE,
+                    Devolucao_anterior DATE,
+                    Devolucao_nova DATE,
+                    Data_Alteracao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+
+            # Função para Auditoria de Devolução
+            cur.execute("""
+                CREATE OR REPLACE FUNCTION registrar_auditoria_devolucao()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    IF OLD.Data_Dev_Real IS DISTINCT FROM NEW.Data_Dev_Real THEN
+                        INSERT INTO audit_devolucao (
+                            Num_Tombamento, Email, Data_Empre,
+                            Devolucao_anterior, Devolucao_nova
+                        )
+                        VALUES (
+                            NEW.Num_Tombamento, NEW.Email, NEW.Data_Empre,
+                            OLD.Data_Dev_Real, NEW.Data_Dev_Real
+                        );
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+
+            # Trigger para Auditoria de Devolução
+            cur.execute("""
+                DROP TRIGGER IF EXISTS trg_auditoria_devolucao ON Emprestimo;
+                CREATE TRIGGER trg_auditoria_devolucao
+                AFTER UPDATE ON Emprestimo
+                FOR EACH ROW
+                EXECUTE FUNCTION registrar_auditoria_devolucao();
+            """)
+
+            # Regra de Negócio: Impedir remoção de editora com livros
+            cur.execute("""
+                CREATE OR REPLACE FUNCTION impedir_exclusao_editora_com_livros()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM Livro WHERE ID_Editora = OLD.ID_Editora
+                    ) THEN
+                        RAISE EXCEPTION 'Não é possível remover editoras com livros cadastrados.';
+                    END IF;
+                    RETURN OLD;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+
+            # Trigger para impedir exclusão de editora
+            cur.execute("""
+                DROP TRIGGER IF EXISTS trg_editora_com_livros ON Editora;
+                CREATE TRIGGER trg_editora_com_livros
+                BEFORE DELETE ON Editora
+                FOR EACH ROW
+                EXECUTE FUNCTION impedir_exclusao_editora_com_livros();
+            """)
+
+            # Atualização Derivada: Ajuste de quantidade de exemplares
+            cur.execute("""
+                CREATE OR REPLACE FUNCTION ajustar_quantidade_livros()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    IF TG_OP = 'INSERT' THEN
+                        UPDATE Livro SET Quantidade = Quantidade + 1 WHERE ISBN = NEW.ISBN;
+                    ELSIF TG_OP = 'DELETE' THEN
+                        UPDATE Livro SET Quantidade = Quantidade - 1 WHERE ISBN = OLD.ISBN;
+                    END IF;
+                    RETURN NULL;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+
+            # Trigger para ajuste de quantidade de exemplares
+            cur.execute("""
+                DROP TRIGGER IF EXISTS trg_ajuste_quantidade_exemplar ON Exemplar;
+                CREATE TRIGGER trg_ajuste_quantidade_exemplar
+                AFTER INSERT OR DELETE ON Exemplar
+                FOR EACH ROW
+                EXECUTE FUNCTION ajustar_quantidade_livros();
+            """)
+
+            # Impedir empréstimo de exemplar já emprestado
+            cur.execute("""
+                CREATE OR REPLACE FUNCTION fn_verifica_disponibilidade_exemplar()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM Emprestimo
+                        WHERE Num_Tombamento = NEW.Num_Tombamento
+                          AND Data_Dev_Real IS NULL
+                    ) THEN
+                        RAISE EXCEPTION 'Exemplar % já está emprestado e não foi devolvido.', NEW.Num_Tombamento;
+                    END IF;
+                    RETURN NEW;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+
+            # Trigger para verificar exemplar emprestado
+            cur.execute("""
+                DROP TRIGGER IF EXISTS trg_verifica_exemplar_emprestado ON Emprestimo;
+                CREATE TRIGGER trg_verifica_exemplar_emprestado
+                BEFORE INSERT ON Emprestimo
+                FOR EACH ROW
+                EXECUTE FUNCTION fn_verifica_disponibilidade_exemplar();
+            """)
+
+            # Impedir exclusão de Autor com livros cadastrados
+            cur.execute("""
+                CREATE OR REPLACE FUNCTION fn_impedir_exclusao_autor()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    IF EXISTS (
+                        SELECT 1 FROM Escreve WHERE ID_Autor = OLD.ID
+                    ) THEN
+                        RAISE EXCEPTION 'Autor % possui livros vinculados e não pode ser excluído.', OLD.ID;
+                    END IF;
+                    RETURN OLD;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+
+            # Trigger para impedir exclusão de autor
+            cur.execute("""
+                DROP TRIGGER IF EXISTS trg_impedir_exclusao_autor ON Autor;
+                CREATE TRIGGER trg_impedir_exclusao_autor
+                BEFORE DELETE ON Autor
+                FOR EACH ROW
+                EXECUTE FUNCTION fn_impedir_exclusao_autor();
+            """)
+
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"Erro ao criar tabelas, funções ou triggers: {e}")
+        finally:
+            cur.close()
+            conn.close()
+
+
 def obter_valor_banco_dados(consulta, parametros=None):
     conexao_db = conectar()
     if conexao_db:
@@ -613,12 +784,189 @@ def menu_autores():
         else:
             print("Opção inválida. Por favor, tente novamente.")
 
+def remover_autor(id_autor):
+    conexao_db = conectar()
+    if conexao_db:
+        try:
+            cursor = conexao_db.cursor()
+            cursor.execute("DELETE FROM Autor WHERE ID = %s", (id_autor,))
+            if cursor.rowcount > 0:
+                print(f"Autor ID {id_autor} removido com sucesso!")
+            else:
+                print(f"Nenhum autor encontrado com ID {id_autor}.")
+            conexao_db.commit()
+        except psycopg2.Error as e:
+            print(f"Erro ao remover autor: {e}")
+            conexao_db.rollback()
+        except Exception as e:
+            print(f"Erro inesperado ao remover autor: {e}")
+        finally:
+            if cursor: cursor.close()
+            if conexao_db: conexao_db.close()
+
+def remover_editora(id_editora):
+    conexao_db = conectar()
+    if conexao_db:
+        try:
+            cursor = conexao_db.cursor()
+            cursor.execute("DELETE FROM Editora WHERE ID_Editora = %s", (id_editora,))
+            if cursor.rowcount > 0:
+                print(f"Editora ID {id_editora} removida com sucesso!")
+            else:
+                print(f"Nenhuma editora encontrada com ID {id_editora}.")
+            conexao_db.commit()
+        except psycopg2.Error as e:
+            print(f"Erro ao remover editora: {e}")
+            conexao_db.rollback()
+        except Exception as e:
+            print(f"Erro inesperado ao remover editora: {e}")
+        finally:
+            if cursor: cursor.close()
+            if conexao_db: conexao_db.close()
+
+def remover_livro(isbn):
+    conexao_db = conectar()
+    if conexao_db:
+        try:
+            cursor = conexao_db.cursor()
+            cursor.execute("SELECT COUNT(*) FROM Exemplar WHERE ISBN = %s", (isbn,))
+            num_exemplares = cursor.fetchone()[0]
+
+            if num_exemplares > 0:
+                print(f"Erro: Existem {num_exemplares} exemplares vinculados ao livro ISBN '{isbn}'. Remova-os primeiro.")
+                conexao_db.rollback()
+                return   
+            cursor.execute("DELETE FROM Escreve WHERE ISBN = %s", (isbn,))
+            cursor.execute("DELETE FROM Livro WHERE ISBN = %s", (isbn,))
+            if cursor.rowcount > 0:
+                print(f"Livro ISBN '{isbn}' removido com sucesso!")
+            else:
+                print(f"Nenhum livro encontrado com ISBN '{isbn}'.")
+            conexao_db.commit()
+        except Exception as e:
+            print(f"Erro ao remover livro: {e}")
+            if conexao_db: conexao_db.rollback()
+        finally:
+            if cursor: cursor.close()
+            if conexao_db: conexao_db.close()
+
+def remover_exemplar(num_tombamento):
+    conexao_db = conectar()
+    if conexao_db:
+        try:
+            cursor = conexao_db.cursor()
+            cursor.execute("SELECT COUNT(*) FROM Emprestimo WHERE Num_Tombamento = %s AND Data_Dev_Real IS NULL", (num_tombamento,))
+            if cursor.fetchone()[0] > 0:
+                print(f"Erro: Exemplar {num_tombamento} está atualmente emprestado e não pode ser removido.")
+                conexao_db.rollback()
+                return
+
+            cursor.execute("DELETE FROM Exemplar WHERE Num_Tombamento = %s", (num_tombamento,))
+            if cursor.rowcount > 0:
+                print(f"Exemplar com número de tombamento {num_tombamento} removido com sucesso!")
+            else:
+                print(f"Nenhum exemplar encontrado com número de tombamento {num_tombamento}.")
+            conexao_db.commit()
+        except Exception as e:
+            print(f"Erro ao remover exemplar: {e}")
+            if conexao_db: conexao_db.rollback()
+        finally:
+            if cursor: cursor.close()
+            if conexao_db: conexao_db.close()
+
+def remover_usuario(email):
+    conexao_db = conectar()
+    if conexao_db:
+        try:
+            cursor = conexao_db.cursor()
+            
+            cursor.execute("SELECT COUNT(*) FROM Emprestimo WHERE Email = %s AND Data_Dev_Real IS NULL", (email,))
+            if cursor.fetchone()[0] > 0:
+                print(f"Erro: Usuário '{email}' possui empréstimos ativos e não pode ser removido.")
+                conexao_db.rollback()
+                return
+
+            cursor.execute("DELETE FROM Usuario WHERE Email = %s", (email,))
+            if cursor.rowcount > 0:
+                print(f"Usuário com email '{email}' removido com sucesso!")
+            else:
+                print(f"Nenhum usuário encontrado com email '{email}'.")
+            conexao_db.commit()
+        except Exception as e:
+            print(f"Erro ao remover usuário: {e}")
+            if conexao_db: conexao_db.rollback()
+        finally:
+            if cursor: cursor.close()
+            if conexao_db: conexao_db.close()
+
+
+def menu_autores():
+    while True:
+        print("\n--- Gerenciar Autores ---")
+        print("1. Inserir Novo Autor")
+        print("2. Atualizar Autor Existente")
+        print("3. Listar Todos os Autores")
+        print("4. Remover Autor") 
+        print("5. Voltar ao Menu Principal")
+        
+        escolha = input("Escolha uma opção: ")
+
+        if escolha == '1':
+            nome = input("Digite o nome do autor: ")
+            nacionalidade = input("Digite a nacionalidade do autor: ")
+            data_nascimento = solicitar_data("Digite a data de nascimento (AAAA-MM-DD): ")
+            inserir_autor(nome, nacionalidade, data_nascimento)
+        
+        elif escolha == '2':
+            id_autor = solicitar_inteiro("Digite o ID do autor para atualizar: ")
+            if not verificar_existencia("Autor", "ID", id_autor):
+                print(f"Erro: Autor com ID {id_autor} não existe.")
+                continue
+            
+            conexao_db = conectar()
+            nome_atual = nacionalidade_atual = data_nascimento_atual = None
+            if conexao_db:
+                try:
+                    cursor = conexao_db.cursor()
+                    cursor.execute("SELECT Nome, Nacionalidade, Data_Nascimento FROM Autor WHERE ID = %s", (id_autor,))
+                    dados = cursor.fetchone()
+                    if dados:
+                        nome_atual, nacionalidade_atual, data_nascimento_atual = dados
+                except Exception as e:
+                    print(f"Erro ao buscar dados atuais do autor: {e}")
+                finally:
+                    if cursor: cursor.close()
+                    if conexao_db: conexao_db.close()
+            
+            nome = input(f"Digite o novo nome (atual: {nome_atual or 'N/A'}, deixe em branco para não alterar): ") or nome_atual
+            nacionalidade = input(f"Digite a nova nacionalidade (atual: {nacionalidade_atual or 'N/A'}, deixe em branco para não alterar): ") or nacionalidade_atual
+            
+            entrada_data_nascimento = solicitar_data(f"Digite a nova data de nascimento (atual: {data_nascimento_atual.strftime('%Y-%m-%d') if data_nascimento_atual else 'N/A'}, AAAA-MM-DD, deixe em branco para não alterar): ")
+            data_nascimento = entrada_data_nascimento if entrada_data_nascimento is not None else data_nascimento_atual
+
+            atualizar_autor(id_autor, nome, nacionalidade, data_nascimento)
+
+        elif escolha == '3':
+            listar_autores()
+
+        elif escolha == '4': 
+            listar_autores()
+            id_autor = solicitar_inteiro("Digite o ID do autor para remover: ")
+            remover_autor(id_autor)
+
+        elif escolha == '5':
+            break
+        
+        else:
+            print("Opção inválida. Por favor, tente novamente.")
+
 def menu_editoras():
     while True:
         print("\n--- Gerenciar Editoras ---")
         print("1. Inserir Nova Editora")
         print("2. Listar Todas as Editoras")
-        print("3. Voltar ao Menu Principal")
+        print("3. Remover Editora") 
+        print("4. Voltar ao Menu Principal")
         
         escolha = input("Escolha uma opção: ")
 
@@ -628,12 +976,17 @@ def menu_editoras():
             telefone = input("Digite o telefone da editora: ")
             email = input("Digite o email da editora: ")
             cnpj = input("Digite o CNPJ da editora: ")
-            inserir_editora(nome, endereco, telefone, email, cnpj) # Passa todos os campos
+            inserir_editora(nome, endereco, telefone, email, cnpj) 
         
         elif escolha == '2':
             listar_editoras()
 
-        elif escolha == '3':
+        elif escolha == '3': 
+            listar_editoras()
+            id_editora = solicitar_inteiro("Digite o ID da editora para remover: ")
+            remover_editora(id_editora)
+
+        elif escolha == '4':
             break
         
         else:
@@ -647,7 +1000,8 @@ def menu_livros():
         print("3. Listar Todos os Livros")
         print("4. Associar Autor a Livro")
         print("5. Listar Livros por Autor")
-        print("6. Voltar ao Menu Principal")
+        print("6. Remover Livro") 
+        print("7. Voltar ao Menu Principal")
         
         escolha = input("Escolha uma opção: ")
 
@@ -710,7 +1064,12 @@ def menu_livros():
             id_autor = solicitar_inteiro("Digite o ID do autor para listar seus livros: ")
             listar_livros_por_autor(id_autor)
 
-        elif escolha == '6':
+        elif escolha == '6': 
+            listar_livros()
+            isbn = input("Digite o ISBN do livro para remover: ")
+            remover_livro(isbn)
+
+        elif escolha == '7':
             break
         
         else:
@@ -721,7 +1080,8 @@ def menu_exemplares():
         print("\n--- Gerenciar Exemplares ---")
         print("1. Inserir Novo Exemplar")
         print("2. Listar Todos os Exemplares")
-        print("3. Voltar ao Menu Principal")
+        print("3. Remover Exemplar") 
+        print("4. Voltar ao Menu Principal")
         
         escolha = input("Escolha uma opção: ")
 
@@ -734,7 +1094,12 @@ def menu_exemplares():
         elif escolha == '2':
             listar_exemplares()
 
-        elif escolha == '3':
+        elif escolha == '3': 
+            listar_exemplares()
+            num_tombamento = solicitar_inteiro("Digite o número de tombamento do exemplar para remover: ")
+            remover_exemplar(num_tombamento)
+
+        elif escolha == '4':
             break
         
         else:
@@ -746,7 +1111,8 @@ def menu_usuarios():
         print("1. Inserir Novo Usuário")
         print("2. Atualizar Usuário Existente")
         print("3. Listar Todos os Usuários")
-        print("4. Voltar ao Menu Principal")
+        print("4. Remover Usuário") 
+        print("5. Voltar ao Menu Principal")
         
         escolha = input("Escolha uma opção: ")
 
@@ -791,11 +1157,17 @@ def menu_usuarios():
         elif escolha == '3':
             listar_usuarios()
 
-        elif escolha == '4':
+        elif escolha == '4': 
+            listar_usuarios()
+            email = input("Digite o email do usuário para remover: ")
+            remover_usuario(email)
+
+        elif escolha == '5':
             break
         
         else:
             print("Opção inválida. Por favor, tente novamente.")
+
 
 def menu_emprestimos():
     while True:
@@ -885,4 +1257,5 @@ def menu_principal():
             print("Opção inválida. Por favor, tente novamente.")
 
 if __name__ == "__main__":
+    criar_tabelas_e_triggers() 
     menu_principal()
