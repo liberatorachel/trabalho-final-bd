@@ -599,6 +599,37 @@ def listar_livros_por_autor(id_autor):
             if cursor: cursor.close()
             if conexao_db: conexao_db.close()
 
+def listar_autores_por_livro(isbn):
+    conexao_db = conectar()
+    if conexao_db:
+        try:
+            cursor = conexao_db.cursor()
+            consulta = """
+            SELECT A.ID, A.Nome, A.Nacionalidade
+            FROM Autor A
+            JOIN Escreve E ON A.ID = E.ID_Autor
+            WHERE E.ISBN = %s
+            ORDER BY A.Nome
+            """
+            cursor.execute(consulta, (isbn,))
+            autores = cursor.fetchall()
+            
+            if autores:
+                titulo_livro = obter_valor_banco_dados("SELECT Titulo FROM Livro WHERE ISBN = %s", (isbn,))
+                print(f"\n--- Autores do Livro: '{titulo_livro or 'ISBN ' + str(isbn)}' ---")
+                print(f"{'ID':<5} {'Nome':<30} {'Nacionalidade':<18}")
+                print("-" * 55)
+                for autor in autores:
+                    print(f"{autor[0]:<5} {autor[1]:<30} {autor[2]:<18}")
+                print("---------------------------------------")
+            else:
+                print(f"Nenhum autor encontrado para o livro ISBN '{isbn}'.")
+        except Exception as e:
+            print(f"Erro ao listar autores por livro: {e}")
+        finally:
+            if cursor: cursor.close()
+            if conexao_db: conexao_db.close()
+
 def registrar_emprestimo(numero_tombamento, email_usuario, data_emprestimo, data_prevista_devolucao):
     if not verificar_existencia("Exemplar", "Num_Tombamento", numero_tombamento):
         print(f"Erro: Exemplar com número de tombamento {numero_tombamento} não existe.")
@@ -730,59 +761,6 @@ def listar_emprestimos(apenas_ativos=False):
             if cursor: cursor.close()
             if conexao_db: conexao_db.close()
 
-def menu_autores():
-    while True:
-        print("\n--- Gerenciar Autores ---")
-        print("1. Inserir Novo Autor")
-        print("2. Atualizar Autor Existente")
-        print("3. Listar Todos os Autores")
-        print("4. Voltar ao Menu Principal")
-        
-        escolha = input("Escolha uma opção: ")
-
-        if escolha == '1':
-            nome = input("Digite o nome do autor: ")
-            nacionalidade = input("Digite a nacionalidade do autor: ")
-            data_nascimento = solicitar_data("Digite a data de nascimento (AAAA-MM-DD): ")
-            inserir_autor(nome, nacionalidade, data_nascimento)
-        
-        elif escolha == '2':
-            id_autor = solicitar_inteiro("Digite o ID do autor para atualizar: ")
-            if not verificar_existencia("Autor", "ID", id_autor):
-                print(f"Erro: Autor com ID {id_autor} não existe.")
-                continue
-            
-            conexao_db = conectar()
-            nome_atual = nacionalidade_atual = data_nascimento_atual = None
-            if conexao_db:
-                try:
-                    cursor = conexao_db.cursor()
-                    cursor.execute("SELECT Nome, Nacionalidade, Data_Nascimento FROM Autor WHERE ID = %s", (id_autor,))
-                    dados = cursor.fetchone()
-                    if dados:
-                        nome_atual, nacionalidade_atual, data_nascimento_atual = dados
-                except Exception as e:
-                    print(f"Erro ao buscar dados atuais do autor: {e}")
-                finally:
-                    if cursor: cursor.close()
-                    if conexao_db: conexao_db.close()
-            
-            nome = input(f"Digite o novo nome (atual: {nome_atual or 'N/A'}, deixe em branco para não alterar): ") or nome_atual
-            nacionalidade = input(f"Digite a nova nacionalidade (atual: {nacionalidade_atual or 'N/A'}, deixe em branco para não alterar): ") or nacionalidade_atual
-            
-            entrada_data_nascimento = solicitar_data(f"Digite a nova data de nascimento (atual: {data_nascimento_atual.strftime('%Y-%m-%d') if data_nascimento_atual else 'N/A'}, AAAA-MM-DD, deixe em branco para não alterar): ")
-            data_nascimento = entrada_data_nascimento if entrada_data_nascimento is not None else data_nascimento_atual
-
-            atualizar_autor(id_autor, nome, nacionalidade, data_nascimento)
-
-        elif escolha == '3':
-            listar_autores()
-
-        elif escolha == '4':
-            break
-        
-        else:
-            print("Opção inválida. Por favor, tente novamente.")
 
 def remover_autor(id_autor):
     conexao_db = conectar()
@@ -829,14 +807,17 @@ def remover_livro(isbn):
     if conexao_db:
         try:
             cursor = conexao_db.cursor()
+            
             cursor.execute("SELECT COUNT(*) FROM Exemplar WHERE ISBN = %s", (isbn,))
             num_exemplares = cursor.fetchone()[0]
 
             if num_exemplares > 0:
                 print(f"Erro: Existem {num_exemplares} exemplares vinculados ao livro ISBN '{isbn}'. Remova-os primeiro.")
                 conexao_db.rollback()
-                return   
+                return
+            
             cursor.execute("DELETE FROM Escreve WHERE ISBN = %s", (isbn,))
+            
             cursor.execute("DELETE FROM Livro WHERE ISBN = %s", (isbn,))
             if cursor.rowcount > 0:
                 print(f"Livro ISBN '{isbn}' removido com sucesso!")
@@ -855,6 +836,7 @@ def remover_exemplar(num_tombamento):
     if conexao_db:
         try:
             cursor = conexao_db.cursor()
+
             cursor.execute("SELECT COUNT(*) FROM Emprestimo WHERE Num_Tombamento = %s AND Data_Dev_Real IS NULL", (num_tombamento,))
             if cursor.fetchone()[0] > 0:
                 print(f"Erro: Exemplar {num_tombamento} está atualmente emprestado e não pode ser removido.")
@@ -1000,8 +982,9 @@ def menu_livros():
         print("3. Listar Todos os Livros")
         print("4. Associar Autor a Livro")
         print("5. Listar Livros por Autor")
-        print("6. Remover Livro") 
-        print("7. Voltar ao Menu Principal")
+        print("6. Listar Autores de um Livro") 
+        print("7. Remover Livro")
+        print("8. Voltar ao Menu Principal")
         
         escolha = input("Escolha uma opção: ")
 
@@ -1063,13 +1046,18 @@ def menu_livros():
             listar_autores()
             id_autor = solicitar_inteiro("Digite o ID do autor para listar seus livros: ")
             listar_livros_por_autor(id_autor)
-
+        
         elif escolha == '6': 
+            listar_livros()
+            isbn = input("Digite o ISBN do livro para listar seus autores: ")
+            listar_autores_por_livro(isbn)
+
+        elif escolha == '7':
             listar_livros()
             isbn = input("Digite o ISBN do livro para remover: ")
             remover_livro(isbn)
 
-        elif escolha == '7':
+        elif escolha == '8':
             break
         
         else:
@@ -1168,7 +1156,6 @@ def menu_usuarios():
         else:
             print("Opção inválida. Por favor, tente novamente.")
 
-
 def menu_emprestimos():
     while True:
         print("\n--- Gerenciar Empréstimos ---")
@@ -1203,7 +1190,11 @@ def menu_emprestimos():
             numero_tombamento = solicitar_inteiro("Digite o número de tombamento do exemplar a ser devolvido: ")
             email_usuario = input("Digite o email do usuário que devolveu: ")
             str_data_emprestimo_original = input("Digite a data original do empréstimo (AAAA-MM-DD) para identificação: ")
-            data_emprestimo_original = date.fromisoformat(str_data_emprestimo_original)
+            try:
+                data_emprestimo_original = date.fromisoformat(str_data_emprestimo_original)
+            except ValueError:
+                print("Formato de data inválido para a data de empréstimo original. Operação cancelada.")
+                continue
 
             data_real_devolucao = date.today()
             print(f"Data Real de Devolução (padrão para hoje): {data_real_devolucao.strftime('%Y-%m-%d')}")
@@ -1257,5 +1248,5 @@ def menu_principal():
             print("Opção inválida. Por favor, tente novamente.")
 
 if __name__ == "__main__":
-    criar_tabelas_e_triggers() 
+    criar_tabelas_e_triggers()
     menu_principal()
