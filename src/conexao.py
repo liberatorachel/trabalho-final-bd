@@ -5,9 +5,10 @@ def conectar():
         conexao = psycopg2.connect(
             dbname="biblioteca",
             user="postgres",          
-            password="sua_senha_aqui", 
+            password="sqltayllan", 
             host="localhost",
-            port="5432"
+            port="5432",
+            client_encoding="utf8"
         )
         print("Conexão realizada com sucesso!")
         return conexao
