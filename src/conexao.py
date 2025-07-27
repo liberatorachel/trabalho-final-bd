@@ -10,6 +10,8 @@ def conectar():
             port="5432",
             client_encoding="utf8"
         )
+        conexao.set_client_encoding('UTF8')
+        
         print("Conexão realizada com sucesso!")
         return conexao
     except Exception as e:
