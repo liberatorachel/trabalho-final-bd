@@ -2,18 +2,44 @@
 
 ## Descrição
 
-Este projeto é um sistema simples para gerenciamento de dados de uma biblioteca, desenvolvido em Python com banco de dados PostgreSQL.  
-Ele permite inserir, atualizar, remover e listar livros, conectando-se ao banco via `psycopg2`.
+Este projeto é um sistema para o gerenciamento completo de uma biblioteca, desenvolvido em Python com um robusto banco de dados PostgreSQL. Ele permite automatizar operações como o cadastro e a manutenção de autores, editoras, livros, exemplares e usuários, além de controlar o fluxo de empréstimos e devoluções.
+
+O sistema foi concebido com foco na integridade dos dados, utilizando chaves primárias e estrangeiras, e aplicando triggers avançadas no PostgreSQL para reforçar regras de negócio (ex: impedir a remoção de editoras com livros vinculados, ou o empréstimo de exemplares já em uso). A conexão com o banco de dados é feita através da biblioteca psycopg2
 
 ---
 
-## Estrutura do projeto
+## Estrutura do Projeto
 
-- `src/conexao.py` - código para conexão com o banco PostgreSQL  
-- `src/testeconexao.py` - script de teste para validar conexão  
-- `.venv/` - ambiente virtual Python  
-- `requirements.txt` - dependências do projeto  
-- Outros arquivos do sistema (a serem desenvolvidos)
+A estrutura do projeto está organizada para facilitar a compreensão e a colaboração:
+
+### Documentacao/
+- `Relatorio_Sistema_Biblioteca.pdf` - Relatório detalhado do projeto.
+- `Trabalho_Final___Banco_de_Dados.pdf` - Instruções originais do trabalho (opcional).
+
+### Modelagem/
+- `Diagrama_ER.png` - Diagrama Entidade-Relacionamento (ERD) do sistema.
+- `Modelo_Relacional.jpg` - Imagem do Modelo Relacional do banco de dados.
+
+### Scripts_SQL/
+- `create_tables.sql` - Script SQL para criar o esquema do banco de dados e todas as tabelas.
+- `create_triggers.sql` - Script SQL para criar as triggers e funções PL/pgSQL.
+
+### Codigo_Fonte/
+- `main.py` - Ponto de entrada principal da aplicação Python, com o menu de interação.
+- `database/`
+    - `connection.py` - Módulo para configuração e gestão da conexão com o PostgreSQL.
+- `src/`
+    - `models/` - Contém os módulos com as operações CRUD para cada entidade (autor, editora, livro, exemplar, usuário, empréstimo).
+        - `autor_model.py`
+        - `editora_model.py`
+        - `livro_model.py`
+        - `exemplar_model.py`
+        - `usuario_model.py`
+        - `emprestimo_model.py`
+    - `menus.py` - Contém as funções para os menus de interação do usuário.
+- `.venv/` - Ambiente virtual Python (gerado localmente).
+- `requirements.txt` - Lista de dependências Python do projeto.
+
 
 ---
 
@@ -22,69 +48,6 @@ Ele permite inserir, atualizar, remover e listar livros, conectando-se ao banco 
 - Python 3.11 ou superior instalado  
 - PostgreSQL instalado e configurado (com banco `biblioteca` criado)  
 - Git instalado (para controle de versão e colaboração)
-
----
-
-## Configuração inicial para colaboradores
-
-### 1. Clonar o repositório
-
-```
-git clone https://github.com/seu-usuario/trabalho-final-bd.git
-cd trabalho-final-bd
-```
-
-### 2. Criar e ativar ambiente virtual
-
-No Windows (PowerShell):
-
-```
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-```
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Instalar dependências
-
-```
-pip install -r requirements.txt
-```
-
-### 4. Configurar conexão com banco
-
-No arquivo `src/conexao.py`, alterar os parâmetros:
-
-```python
-dbname="biblioteca"
-user="postgres"
-password="sua_senha_aqui"
-host="localhost"
-port="5432"
-```
-
----
-
-## Como executar
-
-Para testar a conexão com o banco de dados, rode:
-
-```
-python src/testeconexao.py
-```
-
-Se a conexão for bem-sucedida, verá mensagens de sucesso.
-
----
-
-## Fluxo de trabalho colaborativo
-
-- Cada membro deve criar uma branch para desenvolver suas funcionalidades  
-- Fazer commits frequentes e criar pull requests para a branch principal `main`  
-- Revisar código e fazer merge após aprovação  
 
 ---
 

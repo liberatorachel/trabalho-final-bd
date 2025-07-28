@@ -1,4 +1,4 @@
-from conexao import conectar
+from connection import conectar
 
 def teste():
     conexao = conectar()
