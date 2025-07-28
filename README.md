@@ -20,25 +20,24 @@ A estrutura do projeto está organizada para facilitar a compreensão e a colabo
 - `Diagrama_ER.png` - Diagrama Entidade-Relacionamento (ERD) do sistema.
 - `Modelo_Relacional.jpg` - Imagem do Modelo Relacional do banco de dados.
 
-### Scripts_SQL/
+### sql/
 - `create_tables.sql` - Script SQL para criar o esquema do banco de dados e todas as tabelas.
 - `create_triggers.sql` - Script SQL para criar as triggers e funções PL/pgSQL.
 
-### Codigo_Fonte/
+### src/
 - `main.py` - Ponto de entrada principal da aplicação Python, com o menu de interação.
 - `database/`
     - `connection.py` - Módulo para configuração e gestão da conexão com o PostgreSQL.
-- `src/`
-    - `models/` - Contém os módulos com as operações CRUD para cada entidade (autor, editora, livro, exemplar, usuário, empréstimo).
-        - `autor_model.py`
-        - `editora_model.py`
-        - `livro_model.py`
-        - `exemplar_model.py`
-        - `usuario_model.py`
-        - `emprestimo_model.py`
-    - `menus.py` - Contém as funções para os menus de interação do usuário.
-- `.venv/` - Ambiente virtual Python (gerado localmente).
-- `requirements.txt` - Lista de dependências Python do projeto.
+- `models/` - Contém os módulos com as operações CRUD para cada entidade (autor, editora, livro, exemplar, usuário, empréstimo).
+    - `autor_model.py`
+    - `editora_model.py`
+    - `livro_model.py`
+    - `exemplar_model.py`
+    - `usuario_model.py`
+    - `emprestimo_model.py`
+
+#### .venv/ - Ambiente virtual Python (gerado localmente).
+### requirements.txt - Lista de dependências Python do projeto.
 
 
 ---
